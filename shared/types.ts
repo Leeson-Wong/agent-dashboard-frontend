@@ -8,8 +8,18 @@
 // Agent Types
 // ============================================================================
 
-/** Agent status */
-export type AgentStatus = 'online' | 'offline' | 'error' | 'busy'
+/** Agent status - 扩展支持更多状态 */
+export type AgentStatus =
+  | 'online'
+  | 'offline'
+  | 'error'
+  | 'busy'
+  | 'thinking'      // 思考中（调用 LLM）
+  | 'ready'         // 就绪（等待任务）
+  | 'waiting'       // 等待中（等待资源或输入）
+  | 'paused'        // 已暂停
+  | 'stopped'       // 已停止
+  | 'initializing'  // 初始化中
 
 /** Programming language */
 export type AgentLanguage = 'Python' | 'JavaScript' | 'TypeScript' | 'Java' | 'Go' | 'Rust' | string
@@ -31,6 +41,12 @@ export interface AgentState {
   status: AgentStatus
   /** Current activity description */
   currentActivity?: string
+  /** Current tool being used */
+  currentTool?: string
+  /** Current task ID */
+  currentTaskId?: string
+  /** Associated Memory ID */
+  memoryId?: string
   /** Agent role */
   role?: string
   /** Last activity timestamp */

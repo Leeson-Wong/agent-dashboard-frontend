@@ -2,12 +2,40 @@
  * AgentScene - 3D Scene for Agent Visualization
  *
  * Creates a 3D environment with hexagonal zones for each agent.
- * Based on Vibecraft's WorkshopScene, simplified for agent monitoring.
+ * Features:
+ * - 10+ agent states with unique visual indicators
+ * - State-specific animations (thinking, working, waiting, etc.)
+ * - Particle effects for different states
+ * - Progress indicators for active tasks
  */
 
 import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import type { AgentState, AgentZone, StationType, AgentStatus } from '@shared/types'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import type { AgentZone, AgentStatus } from '@shared/types'
+
+// 状态颜色配置
+const STATUS_COLORS: Record<AgentStatus, number> = {
+  online: 0x22c55e,        // green
+  offline: 0x6b7280,       // gray
+  error: 0xef4444,         // red
+  busy: 0xf59e0b,          // amber
+  thinking: 0x8b5cf6,      // purple (思考中)
+  ready: 0x3b82f6,         // blue (就绪)
+  waiting: 0xf97316,       // orange (等待)
+  paused: 0xa855f7,        // purple (暂停)
+  stopped: 0x64748b,       // slate (停止)
+  initializing: 0x0ea5e9,  // sky (初始化)
+}
+
+// Agent 动画状态
+interface AgentAnimationState {
+  status: AgentStatus
+  animTime: number
+  floatOffset: number
+  rotationSpeed: number
+  pulseIntensity: number
+  particleActive: boolean
+}
 
 export class AgentScene {
   private scene: THREE.Scene
@@ -17,7 +45,9 @@ export class AgentScene {
 
   private agentZones: Map<string, AgentZone> = new Map()
   private agentMeshes: Map<string, THREE.Group> = new Map()
+  private agentAnimations: Map<string, AgentAnimationState> = new Map()
   private zoneMeshes: Map<string, THREE.Group> = new Map()
+  private particleSystems: Map<string, THREE.Points> = new Map()
 
   private readonly colors = [0x4ade80, 0x60a5fa, 0xf472b6, 0xa78bfa, 0xfbbf24, 0x2dd4bf]
 
@@ -231,11 +261,21 @@ export class AgentScene {
     this.scene.add(agentMesh)
     this.agentMeshes.set(agentId, agentMesh)
 
+    // Initialize animation state
+    this.agentAnimations.set(agentId, {
+      status: 'offline',
+      animTime: 0,
+      floatOffset: 0,
+      rotationSpeed: 0,
+      pulseIntensity: 0,
+      particleActive: false,
+    })
+
     this.agentZones.set(agentId, zone)
     return zone
   }
 
-  private createZoneMesh(color: number, label: string): THREE.Group {
+  private createZoneMesh(color: number, _label: string): THREE.Group {
     const group = new THREE.Group()
 
     // Hexagonal platform
@@ -285,7 +325,7 @@ export class AgentScene {
   private createAgentMesh(color: number): THREE.Group {
     const group = new THREE.Group()
 
-    // Body (robot-like character)
+    // Body (robot-like character - capsule)
     const bodyGeo = new THREE.CapsuleGeometry(0.5, 1, 8, 16)
     const bodyMat = new THREE.MeshStandardMaterial({
       color: 0x4444aa,
@@ -297,7 +337,7 @@ export class AgentScene {
     body.castShadow = true
     group.add(body)
 
-    // Head
+    // Head (sphere)
     const headGeo = new THREE.SphereGeometry(0.4, 16, 16)
     const headMat = new THREE.MeshStandardMaterial({
       color: 0x6666cc,
@@ -320,13 +360,32 @@ export class AgentScene {
     rightEye.position.set(0.15, 2.65, 0.3)
     group.add(rightEye)
 
-    // Status ring
+    // Status ring (torus)
     const ringGeo = new THREE.TorusGeometry(0.8, 0.08, 8, 32)
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x666666 })
     const ring = new THREE.Mesh(ringGeo, ringMat)
     ring.rotation.x = Math.PI / 2
     ring.position.y = 0.1
+    ring.name = 'statusRing'
     group.add(ring)
+
+    // Antenna (for thinking state visualization)
+    const antennaGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8)
+    const antennaMat = new THREE.MeshStandardMaterial({ color: 0x888888 })
+    const antenna = new THREE.Mesh(antennaGeo, antennaMat)
+    antenna.position.set(0, 3.1, 0)
+    antenna.name = 'antenna'
+    antenna.visible = false
+    group.add(antenna)
+
+    // Antenna bulb
+    const bulbGeo = new THREE.SphereGeometry(0.12, 8, 8)
+    const bulbMat = new THREE.MeshBasicMaterial({ color })
+    const bulb = new THREE.Mesh(bulbGeo, bulbMat)
+    bulb.position.set(0, 3.35, 0)
+    bulb.name = 'antennaBulb'
+    bulb.visible = false
+    group.add(bulb)
 
     return group
   }
@@ -335,16 +394,93 @@ export class AgentScene {
     const agentMesh = this.agentMeshes.get(agentId)
     if (!agentMesh) return
 
+    const animState = this.agentAnimations.get(agentId)
+    if (!animState) return
+
+    // Update animation state based on status
+    animState.status = status
+    animState.animTime = 0
+
+    // Configure animation parameters per status
+    switch (status) {
+      case 'online':
+        animState.rotationSpeed = 0.05
+        animState.pulseIntensity = 0.15
+        animState.particleActive = false
+        this.removeParticleSystem(agentId)
+        break
+      case 'thinking':
+        animState.rotationSpeed = 1.0
+        animState.pulseIntensity = 0.5
+        animState.particleActive = true
+        this.createParticleSystem(agentId, STATUS_COLORS.thinking)
+        break
+      case 'busy':
+        animState.rotationSpeed = 0.5
+        animState.pulseIntensity = 0.3
+        animState.particleActive = true
+        this.createParticleSystem(agentId, STATUS_COLORS.busy)
+        break
+      case 'ready':
+        animState.rotationSpeed = 0.1
+        animState.pulseIntensity = 0.2
+        animState.particleActive = false
+        this.removeParticleSystem(agentId)
+        break
+      case 'waiting':
+        animState.rotationSpeed = 0.2
+        animState.pulseIntensity = 0.4
+        animState.particleActive = true
+        this.createParticleSystem(agentId, STATUS_COLORS.waiting)
+        break
+      case 'error':
+        animState.rotationSpeed = 0
+        animState.pulseIntensity = 0.8
+        animState.particleActive = true
+        this.createParticleSystem(agentId, STATUS_COLORS.error)
+        break
+      case 'paused':
+        animState.rotationSpeed = 0
+        animState.pulseIntensity = 0.1
+        animState.particleActive = false
+        this.removeParticleSystem(agentId)
+        break
+      case 'stopped':
+        animState.rotationSpeed = 0
+        animState.pulseIntensity = 0
+        animState.particleActive = false
+        this.removeParticleSystem(agentId)
+        break
+      case 'initializing':
+        animState.rotationSpeed = 0.8
+        animState.pulseIntensity = 0.6
+        animState.particleActive = true
+        this.createParticleSystem(agentId, STATUS_COLORS.initializing)
+        break
+      default:
+        animState.rotationSpeed = 0
+        animState.pulseIntensity = 0
+        animState.particleActive = false
+        this.removeParticleSystem(agentId)
+    }
+
     // Update status ring color
-    const ring = agentMesh.children.find(c => c.geometry?.type === 'TorusGeometry') as THREE.Mesh
+    const ring = agentMesh.children.find(c => c.name === 'statusRing') as THREE.Mesh
     if (ring && ring.material) {
-      const statusColors = {
-        online: 0x22c55e,
-        offline: 0x6b7280,
-        busy: 0xf59e0b,
-        error: 0xef4444,
+      (ring.material as THREE.MeshBasicMaterial).color = new THREE.Color(STATUS_COLORS[status])
+    }
+
+    // Show/hide antenna for thinking state
+    const antenna = agentMesh.children.find(c => c.name === 'antenna')
+    const bulb = agentMesh.children.find(c => c.name === 'antennaBulb')
+    if (antenna && bulb) {
+      const showAntenna = status === 'thinking' || status === 'busy'
+      antenna.visible = showAntenna
+      bulb.visible = showAntenna
+      if (bulb.children[0] && (bulb.children[0] as THREE.Mesh).material) {
+        ((bulb.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color =
+          new THREE.Color(STATUS_COLORS[status])
       }
-      ;(ring.material as THREE.MeshBasicMaterial).color = new THREE.Color(statusColors[status])
     }
 
     // Update zone opacity based on status
@@ -352,8 +488,19 @@ export class AgentScene {
     if (zoneMesh) {
       const platform = zoneMesh.children[0] as THREE.Mesh
       if (platform.material) {
-        const opacity = status === 'offline' ? 0.05 : 0.15
-        ;(platform.material as THREE.MeshStandardMaterial).opacity = opacity
+        const opacityMap: Record<AgentStatus, number> = {
+          offline: 0.05,
+          online: 0.15,
+          error: 0.2,
+          busy: 0.2,
+          thinking: 0.25,
+          ready: 0.15,
+          waiting: 0.2,
+          paused: 0.1,
+          stopped: 0.08,
+          initializing: 0.2,
+        }
+        ;(platform.material as THREE.MeshStandardMaterial).opacity = opacityMap[status]
       }
     }
 
@@ -364,6 +511,62 @@ export class AgentScene {
     }
   }
 
+  private createParticleSystem(agentId: string, color: number): void {
+    // Remove existing particles
+    this.removeParticleSystem(agentId)
+
+    const particleCount = 50
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(particleCount * 3)
+    const colors = new Float32Array(particleCount * 3)
+    const sizes = new Float32Array(particleCount)
+
+    const colorObj = new THREE.Color(color)
+
+    for (let i = 0; i < particleCount; i++) {
+      // Random position in a sphere around the agent
+      const radius = 2 + Math.random() * 2
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.random() * Math.PI
+
+      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta)
+      positions[i * 3 + 1] = 1.5 + radius * Math.cos(phi)
+      positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta)
+
+      colors[i * 3] = colorObj.r
+      colors[i * 3 + 1] = colorObj.g
+      colors[i * 3 + 2] = colorObj.b
+
+      sizes[i] = Math.random() * 0.1 + 0.05
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+
+    const material = new THREE.PointsMaterial({
+      size: 0.1,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+    })
+
+    const particles = new THREE.Points(geometry, material)
+    this.scene.add(particles)
+    this.particleSystems.set(agentId, particles)
+  }
+
+  private removeParticleSystem(agentId: string): void {
+    const particles = this.particleSystems.get(agentId)
+    if (particles) {
+      this.scene.remove(particles)
+      particles.geometry.dispose()
+      ;(particles.material as THREE.Material).dispose()
+      this.particleSystems.delete(agentId)
+    }
+  }
+
   setFocusedZone(agentId: string | null): void {
     this.focusedZoneId = agentId
 
@@ -371,7 +574,10 @@ export class AgentScene {
     this.zoneMeshes.forEach((mesh, id) => {
       const platform = mesh.children[0] as THREE.Mesh
       if (platform.material) {
-        ;(platform.material as THREE.MeshStandardMaterial).opacity = id === agentId ? 0.25 : 0.15
+        const focused = this.focusedZoneId !== null && id === this.focusedZoneId
+        ;(platform.material as THREE.MeshStandardMaterial).opacity = focused ? 0.3 : 0.15
+        ;(platform.material as THREE.MeshStandardMaterial).emissive =
+          new THREE.Color(focused ? 0x333366 : 0x000000)
       }
     })
   }
@@ -388,11 +594,49 @@ export class AgentScene {
   private animate = (): void => {
     requestAnimationFrame(this.animate)
 
-    // Animate agents (idle floating)
     const time = Date.now() * 0.001
+
+    // Animate agents
     this.agentMeshes.forEach((mesh, agentId) => {
-      if (mesh) {
-        mesh.position.y = Math.sin(time + mesh.position.x) * 0.1
+      const animState = this.agentAnimations.get(agentId)
+      if (!animState) return
+
+      animState.animTime += 0.016 // ~60fps
+
+      // Floating animation (all states)
+      const floatSpeed = animState.status === 'thinking' ? 1.5 :
+                        animState.status === 'busy' ? 1.0 : 0.5
+      mesh.position.y = Math.sin(time * floatSpeed + mesh.position.x) * 0.15
+
+      // Rotation animation (for thinking state)
+      if (animState.rotationSpeed > 0) {
+        mesh.rotation.y += animState.rotationSpeed * 0.02
+      }
+
+      // Pulse animation
+      if (animState.pulseIntensity > 0) {
+        const pulse = 1 + Math.sin(time * 3) * animState.pulseIntensity * 0.1
+        mesh.scale.set(pulse, pulse, pulse)
+      } else {
+        mesh.scale.set(1, 1, 1)
+      }
+
+      // Animate particles
+      const particles = this.particleSystems.get(agentId)
+      if (particles && animState.particleActive) {
+        particles.rotation.y += 0.005
+        const positions = particles.geometry.attributes.position.array as Float32Array
+        for (let i = 0; i < positions.length; i += 3) {
+          positions[i + 1] += Math.sin(time + i) * 0.005
+        }
+        particles.geometry.attributes.position.needsUpdate = true
+      }
+
+      // Animate antenna bulb (for thinking state)
+      const bulb = mesh.children.find(c => c.name === 'antennaBulb')
+      if (bulb && bulb.visible) {
+        const bulbPulse = (Math.sin(time * 5) + 1) * 0.5
+        ;(bulb as THREE.Mesh).scale.setScalar(1 + bulbPulse * 0.3)
       }
     })
 
@@ -424,6 +668,15 @@ export class AgentScene {
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize.bind(this))
+
+    // Dispose all particle systems
+    this.particleSystems.forEach(particles => {
+      this.scene.remove(particles)
+      particles.geometry.dispose()
+      ;(particles.material as THREE.Material).dispose()
+    })
+    this.particleSystems.clear()
+
     this.renderer.dispose()
   }
 }
