@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Dashboard - 3D Monitor</title>
+</head>
+<body>
+  <div id="app">
+    <!-- HUD Overlay -->
+    <div class="hud">
+      <div class="hud-header">
+        <h1>Agent Dashboard</h1>
+        <div class="stats">
+          <span id="agent-count">Agents: 0</span>
+          <span id="online-count">Online: 0</span>
+        </div>
+      </div>
+
+      <div class="hud-body">
+        <div class="agent-list" id="agent-list">
+          <!-- Agent items will be rendered here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Three.js Canvas Container -->
+    <div id="canvas-container"></div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
