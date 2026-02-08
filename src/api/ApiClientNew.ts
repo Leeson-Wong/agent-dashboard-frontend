@@ -4,7 +4,7 @@
  * 封装所有后端 API 调用
  */
 
-import type { AgentState, AgentListResponse, AgentStatsResponse } from '../../shared/types'
+import type { AgentState, AgentListResponse, AgentStatsResponse, SnapshotResponse, DeltaEventsResponse } from '../../shared/types'
 import { config } from '../config/env'
 
 export interface AgentTemplate {
@@ -493,6 +493,45 @@ export class APIClient {
       method: 'PATCH',
       body: JSON.stringify(enabled),
     })
+  }
+
+  // ========================================================================
+  // Snapshot & Delta Sync API
+  // ========================================================================
+
+  /**
+   * 获取最新快照
+   *
+   * @returns Snapshot response or null if no snapshot available
+   */
+  async getLatestSnapshot(): Promise<SnapshotResponse | null> {
+    try {
+      return await this.request<SnapshotResponse>('/api/snapshot/latest')
+    } catch (error) {
+      if (error instanceof APIError && error.status === 404) {
+        // No snapshot available yet
+        return null
+      }
+      throw error
+    }
+  }
+
+  /**
+   * 获取增量事件（快照之后的事件）
+   *
+   * @param seq Sequence number to fetch events after
+   * @returns Delta events response or null if seq expired
+   */
+  async getEventsSince(seq: number): Promise<DeltaEventsResponse | null> {
+    try {
+      return await this.request<DeltaEventsResponse>(`/api/events?since=${seq}`)
+    } catch (error) {
+      if (error instanceof APIError && error.status === 404) {
+        // Seq expired, need to fetch new snapshot
+        return null
+      }
+      throw error
+    }
   }
 
   // ========================================================================

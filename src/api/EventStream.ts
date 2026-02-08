@@ -2,9 +2,11 @@
  * Event Stream - WebSocket 实时通信
  *
  * 负责接收服务端的实时状态更新
+ * 支持快照+增量同步和断线重连
  */
 
-import type { ServerMessage, ClientMessage, AgentEvent, AgentState } from '@shared/types'
+import type { ServerMessage, ClientMessage, AgentEvent, AgentState, SequencedEvent } from '@shared/types'
+import { getAPIClient } from './ApiClientNew'
 
 export type EventHandler = (event: AgentEvent) => void
 export type AgentUpdateHandler = (agents: AgentState[]) => void
@@ -31,6 +33,9 @@ export class EventStream {
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private isConnected = false
+
+  // Sequence number tracking
+  private lastSeq: number = 0
 
   // Event handlers
   private onEvent?: EventHandler
@@ -118,7 +123,7 @@ export class EventStream {
       // 订阅事件
       this.send({ type: 'subscribe' })
 
-      // 请求初始数据
+      // 请求初始数据（第一次连接使用全量同步）
       this.send({ type: 'get_agents' })
 
       this.onConnect?.()
@@ -127,6 +132,12 @@ export class EventStream {
     this.ws.onmessage = (event) => {
       try {
         const message: ServerMessage = JSON.parse(event.data)
+
+        // Extract sequence number if present
+        if (message.type === 'event' && 'seq' in message.payload) {
+          this.lastSeq = (message.payload as any).seq
+        }
+
         this.handleMessage(message)
       } catch (error) {
         console.error('[EventStream] Failed to parse message:', error)
@@ -207,6 +218,95 @@ export class EventStream {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+  }
+
+  // ========================================================================
+  // Sequence Number & Delta Recovery
+  // ========================================================================
+
+  /**
+   * 获取最后收到的序列号
+   */
+  getLastSeq(): number {
+    return this.lastSeq
+  }
+
+  /**
+   * 增量恢复（重连时使用）
+   *
+   * 1. 尝试获取增量事件 /api/events?since=<seq>
+   * 2. 如果 seq 过期（返回 404），则获取新快照
+   * 3. 应用增量事件或快照
+   */
+  async performDeltaRecovery(): Promise<boolean> {
+    const api = getAPIClient()
+    console.log(`[EventStream] Performing delta recovery since seq ${this.lastSeq}`)
+
+    try {
+      // Step 1: 尝试获取增量事件
+      const deltaResponse = await api.getEventsSince(this.lastSeq)
+
+      if (deltaResponse && deltaResponse.events.length > 0) {
+        // 成功获取增量事件
+        console.log(`[EventStream] Delta recovery: got ${deltaResponse.events.length} events`)
+        this.onDeltaEvents?.(deltaResponse.events)
+
+        // 更新序列号
+        if (deltaResponse.events.length > 0) {
+          const lastEvent = deltaResponse.events[deltaResponse.events.length - 1]
+          this.lastSeq = lastEvent.seq
+        }
+
+        return true
+      } else if (deltaResponse && deltaResponse.events.length === 0) {
+        // 没有新事件，不需要恢复
+        console.log('[EventStream] Delta recovery: no new events')
+        return true
+      }
+    } catch (error) {
+      console.warn('[EventStream] Delta recovery failed:', error)
+    }
+
+    // Step 2: seq 过期或获取失败，回退到快照恢复
+    console.log('[EventStream] Falling back to snapshot recovery')
+
+    try {
+      const snapshot = await api.getLatestSnapshot()
+
+      if (snapshot) {
+        console.log(`[EventStream] Snapshot recovery: got snapshot with ${snapshot.data.agents.length} agents`)
+        this.onSnapshot?.(snapshot.data.agents, snapshot.seq)
+        this.lastSeq = snapshot.seq
+        return true
+      } else {
+        console.warn('[EventStream] No snapshot available')
+        return false
+      }
+    } catch (error) {
+      console.error('[EventStream] Snapshot recovery failed:', error)
+      return false
+    }
+  }
+
+  /**
+   * Delta events handler (set by caller)
+   */
+  private onDeltaEvents?: (events: SequencedEvent[]) => void
+
+  /**
+   * Snapshot handler (set by caller)
+   */
+  private onSnapshot?: (agents: AgentState[], seq: number) => void
+
+  /**
+   * Set handlers for delta recovery
+   */
+  setRecoveryHandlers(handlers: {
+    onDeltaEvents: (events: SequencedEvent[]) => void
+    onSnapshot: (agents: AgentState[], seq: number) => void
+  }): void {
+    this.onDeltaEvents = handlers.onDeltaEvents
+    this.onSnapshot = handlers.onSnapshot
   }
 
   /**

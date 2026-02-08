@@ -1,10 +1,11 @@
 /**
  * Agent Store - 客户端状态管理
  *
- * 负责合并来自 API 和 WebSocket 的数据，保证一致性
+ * 负责合并来自 API、WebSocket 和快照的数据，保证一致性
+ * 支持快照+增量同步机制
  */
 
-import type { AgentState, AgentStatus } from '@shared/types'
+import type { AgentState, AgentStatus, SequencedEvent } from '@shared/types'
 
 /**
  * 状态合并策略：
@@ -17,6 +18,7 @@ import type { AgentState, AgentStatus } from '@shared/types'
 export class AgentStore {
   private agents: Map<string, AgentState> = new Map()
   private eventIds = new Set<string>() // 用于事件去重
+  private lastSeq: number = 0 // 最后收到的事件序列号
 
   /**
    * 全量同步（来自 API）
@@ -156,7 +158,111 @@ export class AgentStore {
   clear(): void {
     this.agents.clear()
     this.eventIds.clear()
+    this.lastSeq = 0
     console.log('[AgentStore] Cleared all state')
+  }
+
+  // ========================================================================
+  // Snapshot + Delta Sync Methods
+  // ========================================================================
+
+  /**
+   * 获取最后收到的序列号
+   */
+  getLastSeq(): number {
+    return this.lastSeq
+  }
+
+  /**
+   * 应用快照（完全替换当前状态）
+   *
+   * @param agents 快照中的所有 Agent 状态
+   * @param seq 快照时的序列号
+   */
+  applySnapshot(agents: AgentState[], seq: number): void {
+    console.log(`[AgentStore] Applying snapshot with ${agents.length} agents (seq: ${seq})`)
+
+    // 完全替换本地状态
+    this.agents.clear()
+    this.eventIds.clear()
+
+    agents.forEach(agent => {
+      this.agents.set(agent.agentId, agent)
+    })
+
+    // 更新序列号
+    this.lastSeq = seq
+
+    this.logState()
+  }
+
+  /**
+   * 应用增量事件
+   *
+   * @param events 增量事件列表
+   * @returns 成功应用的事件数量
+   */
+  applyDeltaEvents(events: SequencedEvent[]): number {
+    console.log(`[AgentStore] Applying ${events.length} delta events`)
+
+    let appliedCount = 0
+
+    for (const event of events) {
+      // 检查序列号，确保事件是有序的
+      if (event.seq <= this.lastSeq) {
+        console.log(`[AgentStore] Skipping old event ${event.seq} (lastSeq: ${this.lastSeq})`)
+        continue
+      }
+
+      // 处理事件
+      const agent = this.agents.get(event.agentId)
+
+      switch (event.type) {
+        case 'agent_status':
+          if (agent && event.data.status) {
+            this.agents.set(event.agentId, {
+              ...agent,
+              status: event.data.status,
+              currentActivity: event.data.activity || agent.currentActivity,
+              updatedAt: new Date(event.timestamp).toISOString(),
+            })
+            appliedCount++
+          }
+          break
+
+        case 'agent_activity':
+          if (agent && event.data.activity) {
+            this.agents.set(event.agentId, {
+              ...agent,
+              currentActivity: event.data.activity,
+              currentTool: event.data.tool || agent.currentTool,
+              updatedAt: new Date(event.timestamp).toISOString(),
+            })
+            appliedCount++
+          }
+          break
+
+        case 'agent_error':
+          if (agent && event.data.error) {
+            this.agents.set(event.agentId, {
+              ...agent,
+              status: 'error',
+              currentActivity: `错误: ${event.data.error}`,
+              updatedAt: new Date(event.timestamp).toISOString(),
+            })
+            appliedCount++
+          }
+          break
+      }
+
+      // 更新序列号
+      this.lastSeq = event.seq
+    }
+
+    console.log(`[AgentStore] Applied ${appliedCount}/${events.length} delta events`)
+    this.logState()
+
+    return appliedCount
   }
 
   /**
@@ -167,7 +273,8 @@ export class AgentStore {
     console.log(
       `[AgentStore] State: ${stats.total} total, ` +
       `${stats.online} online, ${stats.busy} busy, ` +
-      `${stats.offline} offline, ${stats.error} error`
+      `${stats.offline} offline, ${stats.error} error, ` +
+      `lastSeq: ${this.lastSeq}`
     )
   }
 }

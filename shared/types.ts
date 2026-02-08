@@ -159,3 +159,46 @@ export type ClientMessage =
   | { type: 'get_agents' }
   | { type: 'get_stats' }
   | { type: 'ping' }
+
+// ============================================================================
+// Snapshot + Delta Sync Types
+// ============================================================================
+
+/** Event with sequence number */
+export interface SequencedEvent {
+  seq: number // Global sequence number
+  type: EventType
+  agentId: string
+  timestamp: number
+  data: {
+    status?: AgentStatus
+    previousStatus?: AgentStatus
+    activity?: string
+    tool?: string
+    details?: Record<string, unknown>
+    error?: string
+    stackTrace?: string
+  }
+}
+
+/** Snapshot response from backend */
+export interface SnapshotResponse {
+  snapshotId: string
+  seq: number // Sequence number at snapshot time
+  data: {
+    agents: AgentState[]
+  }
+  createdAt: string
+}
+
+/** Delta events response from backend */
+export interface DeltaEventsResponse {
+  since: number
+  events: SequencedEvent[]
+}
+
+/** Error response when seq is expired */
+export interface DeltaEventsError {
+  error: string
+  suggestion: string
+}
