@@ -6,6 +6,7 @@
 
 import type { AgentState, AgentListResponse, AgentStatsResponse, SnapshotResponse, DeltaEventsResponse } from '../../shared/types'
 import { config } from '../config/env'
+import { logRequest, logResponse, logError, setLogLevel, LogLevel } from '../utils/apiLogger'
 
 export interface AgentTemplate {
   templateId: string
@@ -61,6 +62,16 @@ export interface AgentOperationResponse {
 }
 
 /**
+ * 后端 API 统一响应格式
+ */
+export interface ApiResponse<T> {
+  code: number
+  message: string
+  data: T
+  timestamp: number
+}
+
+/**
  * API 错误
  */
 export class APIError extends Error {
@@ -87,12 +98,23 @@ interface APIConfig {
  */
 export class APIClient {
   private config: APIConfig
+  private logEnabled: boolean
 
   constructor(customConfig?: Partial<APIConfig>) {
     this.config = {
       baseURL: config.api.baseURL,
       timeout: 10000,
       ...customConfig,
+    }
+
+    // Enable logging in development, disable in production
+    this.logEnabled = import.meta.env.DEV
+
+    // Set log level based on environment
+    if (this.logEnabled) {
+      setLogLevel(LogLevel.DEBUG)
+    } else {
+      setLogLevel(LogLevel.ERROR)
     }
   }
 
@@ -104,6 +126,22 @@ export class APIClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.config.baseURL}${endpoint}`
+    const method = options.method || 'GET'
+
+    // Parse body for logging
+    let requestBody: unknown = undefined
+    if (options.body) {
+      try {
+        requestBody = JSON.parse(options.body as string)
+      } catch {
+        requestBody = options.body
+      }
+    }
+
+    // Log request
+    const logId = this.logEnabled
+      ? logRequest(method, url, options.headers as Record<string, string>, requestBody)
+      : ''
 
     const config: RequestInit = {
       ...options,
@@ -117,6 +155,8 @@ export class APIClient {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout)
 
+    const startTime = Date.now()
+
     try {
       const response = await fetch(url, {
         ...config,
@@ -125,21 +165,68 @@ export class APIClient {
 
       clearTimeout(timeoutId)
 
+      const duration = Date.now() - startTime
+
+      // Get response headers
+      const responseHeaders: Record<string, string> = {}
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value
+      })
+
+      // Parse response body
+      let responseBody: unknown = undefined
+      const contentType = response.headers.get('content-type')
+      if (contentType?.includes('application/json')) {
+        try {
+          responseBody = await response.json()
+        } catch {
+          // Failed to parse JSON
+        }
+      }
+
       if (!response.ok) {
+        // Log error response
+        if (this.logEnabled) {
+          logResponse(logId, response.status, response.statusText, duration, responseHeaders, responseBody)
+          logError(logId, `HTTP ${response.status}: ${response.statusText}`, duration, response.status)
+        }
+
         throw new APIError(
           `HTTP ${response.status}: ${response.statusText}`,
           response.status
         )
       }
 
-      return await response.json()
+      // Log successful response
+      if (this.logEnabled) {
+        logResponse(logId, response.status, response.statusText, duration, responseHeaders, responseBody)
+      }
+
+      return responseBody as T
     } catch (error) {
+      const duration = Date.now() - startTime
+
       if (error instanceof APIError) {
+        if (this.logEnabled) {
+          logError(logId, error.message, duration, error.status, error.code)
+        }
         throw error
       }
 
       if (error instanceof TypeError) {
-        throw new APIError('网络连接失败，请检查后端服务是否启动', 0)
+        const networkError = new APIError('网络连接失败，请检查后端服务是否启动', 0)
+        if (this.logEnabled) {
+          logError(logId, networkError.message, duration, 0, 'NETWORK_ERROR')
+        }
+        throw networkError
+      }
+
+      if (error instanceof Error && error.name === 'AbortError') {
+        const timeoutError = new APIError(`请求超时 (${this.config.timeout}ms)`, 0, 'TIMEOUT')
+        if (this.logEnabled) {
+          logError(logId, timeoutError.message, duration, 0, 'TIMEOUT')
+        }
+        throw timeoutError
       }
 
       throw error

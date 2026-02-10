@@ -45,6 +45,19 @@
 
     <!-- Content -->
     <div v-if="!isCollapsed" class="panel-content">
+      <!-- Loading State -->
+      <div v-if="loading" class="loading-state">
+        <div class="spinner"></div>
+        <div>加载中...</div>
+      </div>
+
+      <!-- Error State -->
+      <div v-else-if="error" class="error-state">
+        <div class="error-icon">⚠️</div>
+        <div class="error-message">{{ error }}</div>
+        <button class="btn-small" @click="loadTasks">重试</button>
+      </div>
+
       <!-- List View -->
       <div v-if="viewMode === 'list'" class="task-list">
         <div v-if="filteredTasks.length === 0" class="empty-state">
@@ -161,22 +174,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { getAPIClient } from '../api/ApiClientNew'
 
 // Props
 interface Props {
   agentId?: string
-  tasks?: Task[]
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  tasks: () => [],
-})
+const props = defineProps<Props>()
 
 // Emits
 const emit = defineEmits<{
   close: []
-  refresh: []
   retry: [task: Task]
 }>()
 
@@ -201,6 +211,9 @@ export interface Task {
 }
 
 // State
+const tasks = ref<Task[]>([])
+const loading = ref(true)
+const error = ref<string | null>(null)
 const isCollapsed = ref(false)
 const viewMode = ref<'list' | 'timeline'>('list')
 const selectedStatuses = ref<string[]>(['completed', 'failed', 'running'])
@@ -228,7 +241,7 @@ const statusTextMap: Record<string, string> = {
 
 // Computed
 const filteredTasks = computed(() => {
-  return props.tasks.filter(task => {
+  return tasks.value.filter(task => {
     // Filter by status
     if (!selectedStatuses.value.includes(task.status)) return false
     // Filter by agent if specified
@@ -245,10 +258,10 @@ const sortedTasks = computed(() => {
 
 const stats = computed(() => {
   return {
-    total: props.tasks.length,
-    completed: props.tasks.filter(t => t.status === 'completed').length,
-    failed: props.tasks.filter(t => t.status === 'failed').length,
-    running: props.tasks.filter(t => t.status === 'running').length,
+    total: tasks.value.length,
+    completed: tasks.value.filter(t => t.status === 'completed').length,
+    failed: tasks.value.filter(t => t.status === 'failed').length,
+    running: tasks.value.filter(t => t.status === 'running').length,
   }
 })
 
@@ -300,8 +313,32 @@ const toggleCollapse = (): void => {
   isCollapsed.value = !isCollapsed.value
 }
 
-const refreshTasks = (): void => {
-  emit('refresh')
+const refreshTasks = async (): Promise<void> => {
+  await loadTasks()
+}
+
+const loadTasks = async (): Promise<void> => {
+  loading.value = true
+  error.value = null
+
+  try {
+    const api = getAPIClient()
+    const allTasks = await api.getAllTasks()
+
+    // Filter by agent if specified
+    if (props.agentId) {
+      tasks.value = allTasks.filter(t => t.agentId === props.agentId)
+    } else {
+      tasks.value = allTasks
+    }
+
+    console.log(`Loaded ${tasks.value.length} tasks`)
+  } catch (err) {
+    console.error('Failed to load tasks:', err)
+    error.value = err instanceof Error ? err.message : 'Failed to load tasks'
+  } finally {
+    loading.value = false
+  }
 }
 
 const selectTask = (task: Task): void => {
@@ -312,6 +349,16 @@ const retryTask = (task: Task): void => {
   emit('retry', task)
   selectedTask.value = null
 }
+
+// Lifecycle hooks
+onMounted(() => {
+  loadTasks()
+})
+
+// Watch for agentId changes
+watch(() => props.agentId, () => {
+  loadTasks()
+})
 </script>
 
 <style scoped>
@@ -777,5 +824,64 @@ const retryTask = (task: Task): void => {
 
 .btn.primary:hover {
   background: rgba(59, 130, 246, 1);
+}
+
+/* Loading & Error States */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(148, 163, 184, 0.2);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+}
+
+.error-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.error-message {
+  font-size: 13px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  background: rgba(51, 65, 85, 0.8);
+  color: #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-small:hover {
+  background: rgba(71, 85, 105, 1);
 }
 </style>

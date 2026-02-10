@@ -1,0 +1,357 @@
+/**
+ * Compact Mode Styles
+ *
+ * Applies compact, ultra-compact spacing based on data-compact-mode attribute
+ */
+
+/* ===== Global Scale Factors ===== */
+:root {
+  --compact-scale: 1;
+  --compact-spacing: 1;
+  --compact-font-size: 1;
+  --compact-padding: 1;
+}
+
+/* ===== Compact Mode (data-compact-mode="compact") ===== */
+[data-compact-mode="compact"] {
+  --compact-scale: 0.9;
+  --compact-spacing: 0.75;
+  --compact-font-size: 0.9;
+  --compact-padding: 0.8;
+}
+
+/* ===== Ultra Compact Mode (data-compact-mode="ultra") ===== */
+[data-compact-mode="ultra"] {
+  --compact-scale: 0.8;
+  --compact-spacing: 0.6;
+  --compact-font-size: 0.85;
+  --compact-padding: 0.65;
+}
+
+/* ===== Apply Scale to Common Elements ===== */
+
+/* Headers */
+[data-compact-mode] .app-header {
+  padding: calc(12px * var(--compact-padding)) calc(20px * var(--compact-padding));
+  min-height: calc(60px * var(--compact-scale));
+}
+
+[data-compact-mode] .app-header h1 {
+  font-size: calc(24px * var(--compact-font-size));
+}
+
+[data-compact-mode] .header-stats .stat {
+  font-size: calc(12px * var(--compact-font-size));
+  padding: 4px calc(8px * var(--compact-padding));
+}
+
+/* Buttons */
+[data-compact-mode] button {
+  padding: calc(6px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  font-size: calc(13px * var(--compact-font-size));
+}
+
+[data-compact-mode] .memory-btn,
+[data-compact-mode] .refresh-btn,
+[data-compact-mode] .shortcut-btn,
+[data-compact-mode] .command-palette-btn,
+[data-compact-mode] .settings-btn,
+[data-compact-mode] .about-btn {
+  width: calc(36px * var(--compact-scale));
+  height: calc(36px * var(--compact-scale));
+}
+
+/* Agent List */
+[data-compact-mode] .agent-list-panel {
+  width: calc(300px * var(--compact-scale));
+}
+
+[data-compact-mode] .agent-list-item {
+  padding: calc(10px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  gap: calc(8px * var(--compact-spacing));
+}
+
+[data-compact-mode] .agent-name {
+  font-size: calc(14px * var(--compact-font-size));
+}
+
+[data-compact-mode] .agent-id,
+[data-compact-mode] .agent-framework,
+[data-compact-mode] .agent-status {
+  font-size: calc(11px * var(--compact-font-size));
+}
+
+/* Agent Detail Panel */
+[data-compact-mode] .agent-detail-panel {
+  width: calc(350px * var(--compact-scale));
+}
+
+[data-compact-mode] .detail-section {
+  padding: calc(12px * var(--compact-padding));
+  margin-bottom: calc(8px * var(--compact-spacing));
+}
+
+[data-compact-mode] .detail-section h3 {
+  font-size: calc(14px * var(--compact-font-size));
+  margin-bottom: calc(8px * var(--compact-spacing));
+}
+
+/* Tags */
+[data-compact-mode] .tag {
+  padding: calc(2px * var(--compact-padding)) calc(8px * var(--compact-padding));
+  font-size: calc(10px * var(--compact-font-size));
+  gap: calc(4px * var(--compact-spacing));
+}
+
+/* Panels (Log, Memory, etc.) */
+[data-compact-mode] .panel {
+  padding: calc(16px * var(--compact-padding));
+}
+
+[data-compact-mode] .panel-header {
+  padding: calc(12px * var(--compact-padding));
+  margin-bottom: calc(12px * var(--compact-spacing));
+}
+
+[data-compact-mode] .panel-header h2 {
+  font-size: calc(16px * var(--compact-font-size));
+}
+
+/* Forms */
+[data-compact-mode] input[type="text"],
+[data-compact-mode] input[type="search"],
+[data-compact-mode] textarea,
+[data-compact-mode] select {
+  padding: calc(8px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  font-size: calc(13px * var(--compact-font-size));
+}
+
+/* Tables */
+[data-compact-mode] table {
+  font-size: calc(12px * var(--compact-font-size));
+}
+
+[data-compact-mode] th,
+[data-compact-mode] td {
+  padding: calc(8px * var(--compact-padding)) calc(12px * var(--compact-padding));
+}
+
+/* Modals */
+[data-compact-mode] .modal-content {
+  padding: calc(20px * var(--compact-padding));
+  max-width: calc(600px * var(--compact-scale));
+}
+
+[data-compact-mode] .modal-header {
+  padding-bottom: calc(12px * var(--compact-spacing));
+  margin-bottom: calc(16px * var(--compact-spacing));
+}
+
+/* Cards */
+[data-compact-mode] .card {
+  padding: calc(16px * var(--compact-padding));
+  gap: calc(12px * var(--compact-spacing));
+}
+
+/* Lists */
+[data-compact-mode] .list-item {
+  padding: calc(10px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  gap: calc(8px * var(--compact-spacing));
+}
+
+/* Grid layouts */
+[data-compact-mode] .grid {
+  gap: calc(16px * var(--compact-spacing));
+}
+
+/* Specific Component Adjustments */
+
+/* Tag Filter Panel */
+[data-compact-mode] .tag-filter-panel {
+  width: calc(280px * var(--compact-scale));
+  max-height: calc(400px * var(--compact-scale));
+}
+
+[data-compact-mode] .tag-item {
+  padding: calc(6px * var(--compact-padding)) calc(10px * var(--compact-padding));
+  font-size: calc(11px * var(--compact-font-size));
+}
+
+/* Mini Map */
+[data-compact-mode] .mini-map {
+  width: calc(200px * var(--compact-scale));
+  height: calc(150px * var(--compact-scale));
+}
+
+/* Scratchpad */
+[data-compact-mode] .scratchpad {
+  width: calc(300px * var(--compact-scale));
+  height: calc(400px * var(--compact-scale));
+}
+
+/* Time Display */
+[data-compact-mode] .time-display {
+  font-size: calc(12px * var(--compact-font-size));
+  padding: calc(6px * var(--compact-padding)) calc(10px * var(--compact-padding));
+}
+
+/* Resource Monitor */
+[data-compact-mode] .resource-monitor {
+  width: calc(250px * var(--compact-scale));
+}
+
+/* Global Search */
+[data-compact-mode] .global-search-modal {
+  max-width: calc(700px * var(--compact-scale));
+}
+
+[data-compact-mode] .search-result-item {
+  padding: calc(12px * var(--compact-padding));
+}
+
+/* System Info */
+[data-compact-mode] .info-container {
+  width: calc(260px * var(--compact-scale));
+  max-height: calc(450px * var(--compact-scale));
+}
+
+[data-compact-mode] .info-section {
+  padding: calc(10px * var(--compact-padding)) calc(14px * var(--compact-padding));
+}
+
+/* Statistics Cards */
+[data-compact-mode] .stats-card {
+  padding: calc(12px * var(--compact-padding));
+  gap: calc(8px * var(--compact-spacing));
+}
+
+[data-compact-mode] .stats-value {
+  font-size: calc(20px * var(--compact-font-size));
+}
+
+/* Activity Feed */
+[data-compact-mode] .activity-feed {
+  width: calc(280px * var(--compact-scale));
+  max-height: calc(350px * var(--compact-scale));
+}
+
+[data-compact-mode] .activity-item {
+  padding: calc(8px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  font-size: calc(11px * var(--compact-font-size));
+}
+
+/* Command Palette */
+[data-compact-mode] .command-palette {
+  max-width: calc(650px * var(--compact-scale));
+}
+
+[data-compact-mode] .command-item {
+  padding: calc(10px * var(--compact-padding)) calc(14px * var(--compact-padding));
+}
+
+/* Performance Monitor */
+[data-compact-mode] .performance-monitor {
+  width: calc(220px * var(--compact-scale));
+}
+
+/* Toast Notifications */
+[data-compact-mode] .toast {
+  padding: calc(10px * var(--compact-padding)) calc(14px * var(--compact-padding));
+  font-size: calc(12px * var(--compact-font-size));
+}
+
+/* Keyboard Help */
+[data-compact-mode] .keyboard-help-content {
+  max-width: calc(700px * var(--compact-scale));
+}
+
+[data-compact-mode] .shortcut-item {
+  padding: calc(8px * var(--compact-padding)) calc(12px * var(--compact-padding));
+}
+
+/* About Dialog */
+[data-compact-mode] .about-content {
+  max-width: calc(600px * var(--compact-scale));
+}
+
+/* User Settings */
+[data-compact-mode] .settings-content {
+  max-width: calc(600px * var(--compact-scale));
+}
+
+[data-compact-mode] .settings-group {
+  padding: calc(12px * var(--compact-padding));
+  margin-bottom: calc(12px * var(--compact-spacing));
+}
+
+/* API Debug Panel */
+[data-compact-mode] .debug-content {
+  width: calc(320px * var(--compact-scale));
+}
+
+[data-compact-mode] .log-item {
+  padding: calc(8px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  font-size: calc(11px * var(--compact-font-size));
+}
+
+/* Health Status */
+[data-compact-mode] .health-modal-content {
+  max-width: calc(550px * var(--compact-scale));
+}
+
+/* WebSocket Status */
+[data-compact-mode] .ws-status-indicator {
+  padding: calc(4px * var(--compact-padding)) calc(8px * var(--compact-padding));
+  font-size: calc(11px * var(--compact-font-size));
+}
+
+/* Session Stats */
+[data-compact-mode] .session-stats {
+  font-size: calc(11px * var(--compact-font-size));
+  padding: calc(6px * var(--compact-padding)) calc(10px * var(--compact-padding));
+}
+
+/* View Toggle */
+[data-compact-mode] .view-toggle-btn {
+  padding: calc(6px * var(--compact-padding));
+  font-size: calc(12px * var(--compact-font-size));
+}
+
+/* Quick Actions Menu */
+[data-compact-mode] .quick-actions-menu {
+  width: calc(220px * var(--compact-scale));
+}
+
+[data-compact-mode] .action-item {
+  padding: calc(8px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  font-size: calc(12px * var(--compact-font-size));
+}
+
+/* Share View Button */
+[data-compact-mode] .share-btn {
+  padding: calc(6px * var(--compact-padding)) calc(12px * var(--compact-padding));
+  font-size: calc(12px * var(--compact-font-size));
+}
+
+/* Animations scale with compact mode */
+[data-compact-mode] * {
+  animation-duration: calc(var(--animation-duration, 0.3s) * var(--compact-scale));
+}
+
+/* Ultra Compact Mode specific adjustments */
+[data-compact-mode="ultra"] .agent-list-panel {
+  width: 260px;
+}
+
+[data-compact-mode="ultra"] .agent-detail-panel {
+  width: 300px;
+}
+
+[data-compact-mode="ultra"] .agent-name {
+  font-size: 13px;
+}
+
+[data-compact-mode="ultra"] .tag {
+  padding: 1px 6px;
+  font-size: 9px;
+}

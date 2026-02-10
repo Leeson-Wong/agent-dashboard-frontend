@@ -55,6 +55,12 @@ export interface AgentState {
   createdAt: string
   /** Updated timestamp */
   updatedAt: string
+  /** Is favorite */
+  isFavorite?: boolean
+  /** User notes */
+  notes?: string
+  /** User tags (JSON string) */
+  tags?: string
 }
 
 /** API response for agent list */
@@ -186,9 +192,27 @@ export interface SnapshotResponse {
   snapshotId: string
   seq: number // Sequence number at snapshot time
   data: {
-    agents: AgentState[]
+    agents: SnapshotAgentData[]
   }
   createdAt: string
+  expiresAt?: string
+}
+
+/** Agent data in snapshot (has Instant timestamps instead of string) */
+export interface SnapshotAgentData {
+  agentId: string
+  serverId: string
+  framework: string
+  language: string
+  status: string
+  currentActivity?: string
+  currentTool?: string
+  currentTaskId?: string
+  memoryId?: string
+  role?: string
+  lastActivity: string
+  createdAt: string
+  updatedAt: string
 }
 
 /** Delta events response from backend */
@@ -201,4 +225,118 @@ export interface DeltaEventsResponse {
 export interface DeltaEventsError {
   error: string
   suggestion: string
+}
+
+// ============================================================================
+// Memory Types (4-layer Memory Architecture)
+// Design Document: 04-memory-management.md
+// ============================================================================
+
+/** Memory 状态 */
+export type MemoryStatus = 'active' | 'inactive' | 'archived'
+
+/** Memory 实体 - AI 本体 */
+export interface Memory {
+  id?: number
+  memoryId: string
+  name: string
+  type: string
+  status: MemoryStatus
+  role?: string
+  persona?: string
+  personaJson?: string
+  goal?: string
+  goalsJson?: string
+  backstory?: string
+  experiences?: string
+  knowledge?: string
+  skills?: string
+  relationships?: string
+  valuesJson?: string
+  modelTrainingDate?: string
+  knowledgeCutoff?: string
+  temporalPatches?: string
+  totalTokens?: number
+  totalInteractions?: number
+  createdAt: string
+  updatedAt: string
+  lastActivatedAt?: string
+  version?: number
+  parentMemoryId?: string
+}
+
+/** 经验 DTO */
+export interface ExperienceDTO {
+  experienceId: string
+  memoryId: string
+  type: string
+  taskType: string
+  taskDescription: string
+  taskComplexity: number
+  approach: string
+  learning: string
+  outcome: string
+  createdAt: string
+}
+
+/** 知识 DTO */
+export interface KnowledgeDTO {
+  id: number
+  memoryId: string
+  type: string
+  content: string
+  sourceType: string
+  sourceDetails: string
+  confidence: number
+  verified: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** 技能 DTO */
+export interface SkillDTO {
+  id: number
+  memoryId: string
+  skillName: string
+  category: string
+  proficiencyLevel: number
+  totalPracticeTime: number
+  lastPracticedAt: string
+  createdAt: string
+}
+
+/** 时间补丁 DTO */
+export interface PatchDTO {
+  patchId: string
+  memoryId: string
+  type: string
+  description: string
+  eventDate: string
+  patch: string
+  confidence: number
+  sourceType: string
+  providedBy: string
+  applied: boolean
+  affectedDomains: string[]
+  createdAt: string
+}
+
+/** API 响应包装 */
+export interface ApiResponse<T> {
+  success: boolean
+  data?: T
+  error?: string
+  code?: number
+}
+
+/** Memory 统计信息 */
+export interface MemoryStats {
+  totalMemories: number
+  activeMemories: number
+  inactiveMemories: number
+  archivedMemories: number
+  totalExperiences: number
+  totalKnowledge: number
+  totalSkills: number
+  totalPatches: number
 }

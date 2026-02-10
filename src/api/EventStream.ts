@@ -5,7 +5,7 @@
  * 支持快照+增量同步和断线重连
  */
 
-import type { ServerMessage, ClientMessage, AgentEvent, AgentState, SequencedEvent } from '@shared/types'
+import type { ServerMessage, ClientMessage, AgentEvent, AgentState, SequencedEvent, SnapshotAgentData } from '@shared/types'
 import { getAPIClient } from './ApiClientNew'
 
 export type EventHandler = (event: AgentEvent) => void
@@ -275,7 +275,24 @@ export class EventStream {
 
       if (snapshot) {
         console.log(`[EventStream] Snapshot recovery: got snapshot with ${snapshot.data.agents.length} agents`)
-        this.onSnapshot?.(snapshot.data.agents, snapshot.seq)
+        // Convert SnapshotAgentData[] to AgentState[]
+        const snapshotAgents: SnapshotAgentData[] = snapshot.data.agents
+        const agents: AgentState[] = snapshotAgents.map(agent => ({
+          agentId: agent.agentId,
+          serverId: agent.serverId,
+          framework: agent.framework,
+          language: agent.language,
+          status: agent.status as any, // Cast to AgentStatus
+          currentActivity: agent.currentActivity,
+          currentTool: agent.currentTool,
+          currentTaskId: agent.currentTaskId,
+          memoryId: agent.memoryId,
+          role: agent.role,
+          lastActivity: agent.lastActivity,
+          createdAt: agent.createdAt,
+          updatedAt: agent.updatedAt,
+        }))
+        this.onSnapshot?.(agents, snapshot.seq)
         this.lastSeq = snapshot.seq
         return true
       } else {

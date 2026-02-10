@@ -11,9 +11,31 @@ import { config } from '../config/env'
 
 export type WebSocketMessageHandler = (message: ServerMessage) => void
 
+export enum ConnectionState {
+  DISCONNECTED = 'disconnected',
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected',
+  RECONNECTING = 'reconnecting',
+  ERROR = 'error'
+}
+
+export interface ConnectionInfo {
+  state: ConnectionState
+  connected: boolean
+  reconnectAttempts: number
+  maxReconnectAttempts: number
+  reconnectDelay: number
+  url: string
+  lastConnectedTime: number | null
+  lastDisconnectedTime: number | null
+}
+
+export type ConnectionStateChangeHandler = (info: ConnectionInfo) => void
+
 export class WebSocketConnection {
   private client: Client | null = null
   private connected = false
+  private state: ConnectionState = ConnectionState.DISCONNECTED
   private reconnectAttempts = 0
   private maxReconnectAttempts: number
   private baseReconnectDelay: number
@@ -33,12 +55,74 @@ export class WebSocketConnection {
   // 消息处理器
   private messageHandlers: Set<WebSocketMessageHandler> = new Set()
 
+  // 连接状态处理器
+  private stateChangeHandlers: Set<ConnectionStateChangeHandler> = new Set()
+
+  // 时间追踪
+  private lastConnectedTime: number | null = null
+  private lastDisconnectedTime: number | null = null
+
   constructor(url?: string) {
     this.url = url ?? config.websocket.baseURL
     this.maxReconnectAttempts = config.websocket.maxReconnectAttempts
     this.baseReconnectDelay = config.websocket.reconnectDelay
     this.currentReconnectDelay = this.baseReconnectDelay
     this.heartbeatInterval = config.websocket.heartbeatInterval
+  }
+
+  /**
+   * 获取连接信息
+   */
+  getConnectionInfo(): ConnectionInfo {
+    return {
+      state: this.state,
+      connected: this.connected,
+      reconnectAttempts: this.reconnectAttempts,
+      maxReconnectAttempts: this.maxReconnectAttempts,
+      reconnectDelay: this.currentReconnectDelay,
+      url: this.url,
+      lastConnectedTime: this.lastConnectedTime,
+      lastDisconnectedTime: this.lastDisconnectedTime
+    }
+  }
+
+  /**
+   * 注册连接状态变化处理器
+   */
+  onStateChange(handler: ConnectionStateChangeHandler): () => void {
+    this.stateChangeHandlers.add(handler)
+
+    // 返回取消订阅函数
+    return () => {
+      this.stateChangeHandlers.delete(handler)
+    }
+  }
+
+  /**
+   * 更新连接状态
+   */
+  private setState(newState: ConnectionState): void {
+    const oldState = this.state
+    this.state = newState
+
+    if (oldState !== newState) {
+      console.log(`WebSocket state: ${oldState} -> ${newState}`)
+      this.notifyStateChange()
+    }
+  }
+
+  /**
+   * 通知状态变化
+   */
+  private notifyStateChange(): void {
+    const info = this.getConnectionInfo()
+    this.stateChangeHandlers.forEach(handler => {
+      try {
+        handler(info)
+      } catch (error) {
+        console.error('Error in state change handler:', error)
+      }
+    })
   }
 
   /**
@@ -50,6 +134,9 @@ export class WebSocketConnection {
         resolve()
         return
       }
+
+      // Set connecting state
+      this.setState(ConnectionState.CONNECTING)
 
       try {
         this.client = new Client({
@@ -63,10 +150,13 @@ export class WebSocketConnection {
         if (this.client) {
           this.client.onConnect = () => {
             this.connected = true
+            this.lastConnectedTime = Date.now()
             this.reconnectAttempts = 0
             this.currentReconnectDelay = this.baseReconnectDelay
             this.missedHeartbeats = 0
             this.lastHeartbeatTime = Date.now()
+
+            this.setState(ConnectionState.CONNECTED)
             console.log('WebSocket connected')
 
             // 订阅默认频道
@@ -82,17 +172,28 @@ export class WebSocketConnection {
           this.client.onStompError = (frame: any) => {
             console.error('WebSocket STOMP error:', frame)
             this.connected = false
+            this.lastDisconnectedTime = Date.now()
+            this.setState(ConnectionState.ERROR)
             reject(new Error(frame.headers?.message || 'STOMP error'))
           }
 
           this.client.onWebSocketClose = () => {
+            const wasConnected = this.connected
             this.connected = false
+            this.lastDisconnectedTime = Date.now()
+
+            if (wasConnected) {
+              this.setState(ConnectionState.DISCONNECTED)
+            }
+
             console.log('WebSocket disconnected')
             this.handleReconnect()
           }
 
           this.client.onWebSocketError = (error: any) => {
             console.error('WebSocket connection error:', error)
+            this.lastDisconnectedTime = Date.now()
+            this.setState(ConnectionState.ERROR)
             this.handleReconnect()
             reject(error)
           }
@@ -102,6 +203,8 @@ export class WebSocketConnection {
         }
       } catch (error) {
         console.error('Failed to create WebSocket connection:', error)
+        this.lastDisconnectedTime = Date.now()
+        this.setState(ConnectionState.ERROR)
         this.handleReconnect()
         reject(error)
       }
@@ -123,6 +226,8 @@ export class WebSocketConnection {
       this.client.deactivate()
       this.client = null
       this.connected = false
+      this.lastDisconnectedTime = Date.now()
+      this.setState(ConnectionState.DISCONNECTED)
     }
   }
 
@@ -138,6 +243,8 @@ export class WebSocketConnection {
         30000
       )
 
+      this.setState(ConnectionState.RECONNECTING)
+
       console.log(
         `Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts}) ` +
         `in ${this.currentReconnectDelay}ms`
@@ -152,6 +259,8 @@ export class WebSocketConnection {
       }, this.currentReconnectDelay)
     } else {
       console.error('Max reconnect attempts reached')
+      this.lastDisconnectedTime = Date.now()
+      this.setState(ConnectionState.ERROR)
       this.currentReconnectDelay = this.baseReconnectDelay
     }
   }
@@ -220,6 +329,8 @@ export class WebSocketConnection {
     const subscription = this.client.subscribe('/topic/agents', (message: any) => {
       try {
         const data = JSON.parse(message.body)
+        // Update last heartbeat time when receiving message
+        this.lastHeartbeatTime = Date.now()
         this.notifyHandlers(data)
       } catch (error) {
         console.error('Failed to parse message:', error)
@@ -227,35 +338,6 @@ export class WebSocketConnection {
     })
 
     this.subscriptions.set('/topic/agents', subscription)
-  }
-
-  /**
-   * 订阅特定 Agent 的更新
-   */
-  subscribeToAgent(agentId: string): void {
-    if (!this.client || !this.connected) {
-      console.warn('Cannot subscribe: not connected')
-      return
-    }
-
-    const destination = `/topic/agents/${agentId}`
-
-    // 取消旧订阅
-    const existing = this.subscriptions.get(destination)
-    if (existing) {
-      existing.unsubscribe()
-    }
-
-    const subscription = this.client.subscribe(destination, (message: any) => {
-      try {
-        const data = JSON.parse(message.body)
-        this.notifyHandlers(data)
-      } catch (error) {
-        console.error('Failed to parse message:', error)
-      }
-    })
-
-    this.subscriptions.set(destination, subscription)
   }
 
   /**
@@ -267,6 +349,8 @@ export class WebSocketConnection {
     const subscription = this.client.subscribe('/topic/notifications', (message: any) => {
       try {
         const data = JSON.parse(message.body)
+        // Update last heartbeat time when receiving message
+        this.lastHeartbeatTime = Date.now()
         this.notifyHandlers(data)
       } catch (error) {
         console.error('Failed to parse notification:', error)
@@ -322,6 +406,17 @@ export class WebSocketConnection {
   isConnected(): boolean {
     return this.connected
   }
+
+  /**
+   * 手动重连
+   */
+  manualReconnect(): Promise<void> {
+    console.log('Manual reconnect requested')
+    this.reconnectAttempts = 0 // Reset attempts
+    this.currentReconnectDelay = this.baseReconnectDelay
+    this.disconnect()
+    return this.connect()
+  }
 }
 
 // 创建全局 WebSocket 连接实例
@@ -333,3 +428,5 @@ export function getWebSocketConnection(): WebSocketConnection {
   }
   return wsConnection
 }
+
+// ConnectionState, ConnectionInfo, and ConnectionStateChangeHandler are already exported with their declarations
